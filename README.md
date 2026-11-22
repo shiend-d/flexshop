@@ -24,20 +24,49 @@ FlexShop adalah aplikasi pencatatan toko dan inventaris berbasis **multi-tenant 
 | Styling | Tailwind CSS v4 |
 | Container | Docker & Docker Compose |
 
-## Menjalankan dengan Docker
+## Menjalankan (pull image — cara normal)
 
-```bash
-cp .env.example .env
-# opsional: ganti JWT_SECRET
-docker compose up -d --build
-```
+Cara normal menjalankan FlexShop adalah menarik image yang sudah dipublikasikan. Tidak perlu build di server.
 
-Akses aplikasi di `http://localhost:3000`. Container yang berjalan:
+Prasyarat: Docker Engine + Docker Compose plugin.
 
-- `flexshop-app` — aplikasi Next.js (port 3000)
-- `flexshop-db` — PostgreSQL 15 (port internal 5432)
+1. Siapkan environment:
 
-Skema tabel dan data dummy dibuat otomatis dari `database/init.sql` saat volume database masih kosong.
+   ```bash
+   cp .env.example .env
+   ```
+
+   Edit `.env`:
+
+   ```env
+   POSTGRES_USER=flexshop
+   POSTGRES_PASSWORD=<openssl rand -hex 24>
+   POSTGRES_DB=flexshop
+   JWT_SECRET=<openssl rand -base64 32>
+   APP_IMAGE=<dockerhub-user>/flexshop-app:latest
+   DB_IMAGE=<dockerhub-user>/flexshop-db:latest
+   ```
+
+2. Pull dan jalankan:
+
+   ```bash
+   docker compose -f docker-compose.pull.yml pull
+   docker compose -f docker-compose.pull.yml up -d
+   ```
+
+3. Cek:
+
+   ```bash
+   docker compose -f docker-compose.pull.yml ps
+   curl http://localhost:3000/api/health
+   ```
+
+   Buka `http://localhost:3000`. Container yang berjalan:
+
+   - `flexshop-app` — aplikasi Next.js (port 3000)
+   - `flexshop-db` — PostgreSQL 15
+
+`init.sql` sudah dibungkus di image DB dan hanya dijalankan saat volume `flexshop_pgdata` pertama kali dibuat.
 
 ### Akun dummy
 
@@ -50,6 +79,92 @@ Skema tabel dan data dummy dibuat otomatis dari `database/init.sql` saat volume 
 | Toko Dummy 5 | `toko5@gmail.com` | `admin123` | PRO | 30 |
 
 Semua akun memakai paket PRO agar bisa menampung 15–30 produk. Anda juga tetap bisa mendaftarkan toko baru lewat halaman registrasi.
+
+### Update dan reset
+
+```bash
+# update ke image terbaru
+docker compose -f docker-compose.pull.yml pull
+docker compose -f docker-compose.pull.yml up -d
+
+# reset total (hapus semua data)
+docker compose -f docker-compose.pull.yml down -v
+```
+
+## Deploy ke server (CT 101)
+
+### Persiapan server (sekali saja)
+
+1. Pastikan LXC punya `nesting=1` dan `keyctl=1` (Docker membutuhkan ini). Di host Proxmox:
+
+   ```bash
+   pct set 101 -features nesting=1,keyctl=1
+   pct reboot 101
+   ```
+
+2. Install Docker + Compose plugin di CT 101 (Debian 12):
+
+   ```bash
+   apt update && apt install -y curl
+   curl -fsSL https://get.docker.com | sh
+   systemctl enable --now docker
+   docker run --rm hello-world
+   ```
+
+3. Pastikan port 3000 tidak dipakai aplikasi lama:
+
+   ```bash
+   ss -ltnp | grep :3000
+   ```
+
+   Hentikan service lama jika ada, misalnya `systemctl stop <nama-service>`.
+
+### Cara utama — Portainer (pull-only)
+
+1. Daftarkan Docker CT 101 sebagai environment di Portainer CE (Portainer Agent di `192.168.122.101:9001`).
+2. **Stacks → Add stack**, nama `flexshop`.
+3. Pilih **Web editor**, tempel isi `docker-compose.pull.yml`.
+4. Isi environment variables:
+
+   ```env
+   APP_IMAGE=<dockerhub-user>/flexshop-app:latest
+   DB_IMAGE=<dockerhub-user>/flexshop-db:latest
+   POSTGRES_PASSWORD=<openssl rand -hex 24>
+   JWT_SECRET=<openssl rand -base64 32>
+   ```
+
+5. **Deploy the stack**.
+
+Kalau image disimpan di repo private, tambahkan kredensial registry di Portainer: **Registries → Add registry**.
+
+### Alternatif — SSH tanpa clone
+
+```bash
+mkdir -p /opt/flexshop && cd /opt/flexshop
+curl -O https://raw.githubusercontent.com/shiend-d/flexshop/main/docker-compose.pull.yml
+
+cat > .env <<'EOF'
+POSTGRES_USER=flexshop
+POSTGRES_PASSWORD=<isi-password-hex>
+POSTGRES_DB=flexshop
+JWT_SECRET=<isi-secret-acak>
+APP_IMAGE=<dockerhub-user>/flexshop-app:latest
+DB_IMAGE=<dockerhub-user>/flexshop-db:latest
+EOF
+
+docker compose -f docker-compose.pull.yml pull
+docker compose -f docker-compose.pull.yml up -d
+```
+
+### Cloudflare Tunnel
+
+Di host Proxmox tempat `cloudflared` berjalan, tambahkan route:
+
+```text
+flexshop.shiend.my.id  →  http://192.168.122.101:3000
+```
+
+Port 3000 tidak perlu dibuka ke internet; tunnel bersifat outbound.
 
 ## Dev lokal (`npm run dev`)
 
@@ -81,10 +196,36 @@ Catatan:
 
 - `database/init.sql` otomatis dijalankan saat volume DB pertama kali dibuat. Untuk reset data: `docker compose down -v && docker compose up -d db`.
 - Saat `npm run dev`, jangan jalankan container `app` (keduanya memakai port 3000). Cukup service `db`.
-- `npm run dev` hanya untuk pengembangan. Untuk demo/UAS gunakan mode produksi (Docker image), sesuai kebutuhan non-fungsional PRD.
+- `npm run dev` hanya untuk pengembangan. Untuk demo/UAS gunakan image produksi lewat `docker-compose.pull.yml`.
 - Tanpa Docker sama sekali: siapkan PostgreSQL lokal, buat database `flexshop`, jalankan `database/init.sql`, lalu isi `DATABASE_URL` di `.env.local`.
 
 Perintah lain: `npm run lint`, `npm run typecheck`, `npm run build`, `npm start`.
+
+## Untuk maintainer — build & push image
+
+Jalankan dari root repo:
+
+```bash
+docker build -t <dockerhub-user>/flexshop-app:latest .
+docker build -t <dockerhub-user>/flexshop-db:latest ./database
+
+docker login
+docker push <dockerhub-user>/flexshop-app:latest
+docker push <dockerhub-user>/flexshop-db:latest
+```
+
+- `docker-compose.pull.yml` — **cara normal deploy** (app image + DB image).
+- `docker-compose.yml` — build lokal/dev (app dibangun dari `Dockerfile`, DB memakai `init.sql`).
+- `docker-compose.server.yml` — alternatif registry lama yang masih membutuhkan folder `database/`.
+
+Setelah push image baru, server cukup:
+
+```bash
+docker compose -f docker-compose.pull.yml pull
+docker compose -f docker-compose.pull.yml up -d
+```
+
+Catatan arsitektur: image lokal dan server harus sama-sama `linux/amd64`. Jika berbeda, build dengan `docker build --platform linux/amd64 -t <dockerhub-user>/flexshop-app:latest .`.
 
 ## API
 
@@ -125,152 +266,25 @@ curl -s -b cookie.txt http://localhost:3000/api/products
 
 ```text
 app/
-  (app)/                 # layout + halaman terproteksi (dashboard, products, transactions)
-  api/                   # route handler auth, products, transactions, health
-  login/                 # halaman login & registrasi
-  globals.css            # token desain, dark variant, animasi
-components/              # UI primitives, shell, form, tabel, toast
-lib/                     # db, jwt, auth, queries, format, validasi
-database/init.sql        # skema + seeder multi-tenant
-proxy.ts                 # redirect berbasis sesi (pengganti middleware Next 16)
-Dockerfile               # multi-stage build standalone
-docker-compose.yml       # flexshop-app + flexshop-db
+  (app)/                    # layout + halaman terproteksi (dashboard, products, transactions)
+  api/                      # route handler auth, products, transactions, health
+  login/                    # halaman login & registrasi
+  globals.css               # token desain, dark variant, animasi
+components/                 # UI primitives, shell, form, tabel, toast
+lib/                        # db, jwt, auth, queries, format, validasi
+database/
+  init.sql                  # skema + data dummy
+  Dockerfile                # postgres + init.sql (image DB)
+proxy.ts                    # redirect berbasis sesi (pengganti middleware Next 16)
+Dockerfile                  # multi-stage build aplikasi (standalone)
+docker-compose.pull.yml     # deploy normal: pull app + DB image
+docker-compose.yml          # build/dev lokal
+docker-compose.server.yml   # alternatif registry lama (butuh folder database/)
 ```
 
-## Deploy ke server (CT 101) tanpa scp
+## Catatan
 
-Ada dua cara tanpa scp. Untuk CT 101 (1 vCPU / 1 GB), **Opsi 1 lebih aman**: server hanya menarik image jadi dan tidak melakukan build berat.
-
-### Persiapan server (sekali saja)
-
-1. Pastikan LXC punya `nesting=1` (Docker membutuhkan ini). Di host Proxmox:
-   ```bash
-   pct set 101 -features nesting=1
-   pct reboot 101
-   ```
-2. Install Docker + Compose plugin di CT 101 (Debian 12):
-   ```bash
-   apt update && apt install -y curl
-   curl -fsSL https://get.docker.com | sh
-   systemctl enable --now docker
-   docker run --rm hello-world
-   ```
-3. Pastikan port 3000 tidak dipakai aplikasi lama (STEGO-AE):
-   ```bash
-   ss -ltnp | grep :3000
-   ```
-   Hentikan service lama jika ada, misalnya `systemctl stop <nama-service>`.
-4. Cek resource:
-   ```bash
-   free -m
-   df -h
-   ```
-
-### Opsi 1 — Docker Hub + `docker pull` (disarankan, tanpa scp)
-
-Di lokal:
-```bash
-# ganti <dockerhub-user> dengan username Docker Hub Anda
-docker login
-docker tag flexshop-app:latest <dockerhub-user>/flexshop-app:latest
-docker push <dockerhub-user>/flexshop-app:latest
-```
-
-Di server (clone repo untuk mengambil `docker-compose.server.yml` dan `database/init.sql`):
-```bash
-cd /root
-git clone https://github.com/<username>/<repo>.git flexshop
-cd flexshop
-
-cp .env.example .env
-nano .env
-# isi:
-#   POSTGRES_PASSWORD=<openssl rand -hex 24>
-#   JWT_SECRET=<openssl rand -base64 32>
-#   APP_IMAGE=<dockerhub-user>/flexshop-app:latest
-
-docker compose -f docker-compose.server.yml pull
-docker compose -f docker-compose.server.yml up -d
-docker compose -f docker-compose.server.yml ps
-curl http://localhost:3000/api/health
-```
-
-Update aplikasi nanti:
-```bash
-# lokal
-docker compose build app
-docker tag flexshop-app:latest <dockerhub-user>/flexshop-app:latest
-docker push <dockerhub-user>/flexshop-app:latest
-
-# server
-cd /root/flexshop && git pull
-docker compose -f docker-compose.server.yml pull
-docker compose -f docker-compose.server.yml up -d
-```
-
-### Opsi 2 — Git clone lalu build di server (tanpa scp, tanpa registry)
-
-Di lokal:
-```bash
-git add .
-git commit -m "FlexShop multi-tenant"
-git remote add origin https://github.com/<username>/<repo>.git
-git push -u origin main
-```
-
-Di server:
-```bash
-cd /root
-git clone https://github.com/<username>/<repo>.git flexshop
-cd flexshop
-cp .env.example .env
-nano .env   # isi POSTGRES_PASSWORD dan JWT_SECRET
-docker compose up -d --build
-```
-
-Peringatan: build Next.js di CT 101 (1 vCPU / 1 GB) bisa lambat dan berisiko OOM. Pastikan swap aktif (`swapon --show`) atau gunakan Opsi 1.
-
-### Opsi 3 — Registry + GitHub Actions (opsional, otomatis)
-
-Setiap `git push` ke GitHub, Actions membangun image lalu push ke GHCR/Docker Hub. Server cukup `docker compose -f docker-compose.server.yml pull && up -d`. Butuh workflow dan secret registry.
-
-### Opsi 4 — Transfer image via scp (cadangan)
-
-```bash
-# lokal
-docker save flexshop-app:latest | gzip > flexshop-app.tar.gz
-scp flexshop-app.tar.gz root@192.168.122.101:/root/
-scp docker-compose.yml root@192.168.122.101:/root/flexshop/
-scp -r database root@192.168.122.101:/root/flexshop/
-
-# server
-cd /root/flexshop
-docker load -i /root/flexshop-app.tar.gz
-docker compose up -d --no-build
-```
-
-Catatan arsitektur: image lokal dan server harus sama-sama `linux/amd64`. Jika berbeda, build dengan `docker build --platform linux/amd64 -t flexshop-app:latest .`.
-
-### File yang wajib ada di server
-
-- `docker-compose.server.yml` (deploy dari registry) atau `docker-compose.yml` (build di server/scp)
-- `database/init.sql` (inisialisasi DB saat volume baru)
-- `.env` (JWT_SECRET, POSTGRES_*, APP_IMAGE)
-- Image `flexshop-app` di registry/daftar image Docker server
-
-### Cloudflare Tunnel
-
-Di host Proxmox tempat `cloudflared` berjalan, tambahkan route:
-
-```text
-flexshop.shiend.my.id  →  http://192.168.122.101:3000
-```
-
-Port 3000 tidak perlu dibuka ke internet; tunnel bersifat outbound.
-
-## Deployment (CT 101)
-
-- Aplikasi berjalan pada container `flexshop-app` di CT 101 (`192.168.122.101`), port 3000.
-- Route Cloudflare Tunnel: `flexshop.shiend.my.id` → `http://192.168.122.101:3000`.
-- Container dikelola melalui Portainer CE dan metrik host dipantau Prometheus + Grafana di CT 100.
-- Batas heap Node di compose diset `--max-old-space-size=512` agar aman pada RAM 1 GB.
+- Akun dummy memakai password `admin123`; ganti/hapus untuk penggunaan nyata.
+- `init.sql` hanya berjalan saat volume DB pertama kali dibuat. Untuk reset: `down -v`.
+- Jangan commit `.env`; simpan `JWT_SECRET` dan `POSTGRES_PASSWORD` hanya di server.
+- Container dikelola melalui Portainer CE; metrik host dipantau Prometheus + Grafana di CT 100.
