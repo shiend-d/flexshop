@@ -37,14 +37,11 @@ Akses aplikasi di `http://localhost:3000`. Container yang berjalan:
 - `flexshop-app` — aplikasi Next.js (port 3000)
 - `flexshop-db` — PostgreSQL 15 (port internal 5432)
 
-Skema dan data awal dibuat otomatis dari `database/init.sql` saat volume database masih kosong.
+Skema tabel dibuat otomatis dari `database/init.sql` saat volume database masih kosong. Database **tidak** berisi akun bawaan.
 
-### Akun demo
+### Akun pertama
 
-| Toko | Email | Password | Paket |
-| --- | --- | --- | --- |
-| Toko Kelontong Berkah | `berkah@flexshop.id` | `password123` | FREE (maks. 10 produk) |
-| Warung Kopi Senja | `senja@flexshop.id` | `password123` | PRO (tanpa batas) |
+Buka halaman login lalu klik **"Belum punya toko? Daftar"** untuk membuat toko pertama (otomatis paket FREE, maks. 10 produk).
 
 ## Dev lokal (`npm run dev`)
 
@@ -101,7 +98,7 @@ Semua query produk/transaksi memakai filter `tenant_id` dari sesi, bukan dari in
 
 ## Pengujian dengan Apache JMeter
 
-1. Buat HTTP Request `POST /api/auth/login` dengan body JSON akun demo dan **HTTP Cookie Manager** agar cookie sesi tersimpan.
+1. Daftarkan satu akun uji lewat `POST /api/auth/register`, lalu buat HTTP Request `POST /api/auth/login` dengan body JSON akun tersebut dan **HTTP Cookie Manager** agar cookie sesi tersimpan.
 2. Tambahkan `GET /api/products` (butuh sesi) dan/atau `GET /api/health` (tanpa sesi).
 3. Skenario yang disarankan: 200, 400, 600, 800, 1000 virtual users; ramp-up 60 detik; loop 10.
 4. Pantau CPU/RAM container melalui Portainer/Grafana saat pengujian berlangsung.
@@ -109,10 +106,15 @@ Semua query produk/transaksi memakai filter `tenant_id` dari sesi, bukan dari in
 Contoh cepat via curl:
 
 ```bash
+# daftar sekali (ganti email/password sesuai kebutuhan)
+curl -s -X POST http://localhost:3000/api/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"store_name":"Toko Contoh","email":"toko@contoh.id","password":"rahasia123"}'
+
 curl -s http://localhost:3000/api/health
 curl -s -c cookie.txt -X POST http://localhost:3000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"berkah@flexshop.id","password":"password123"}'
+  -d '{"email":"toko@contoh.id","password":"rahasia123"}'
 curl -s -b cookie.txt http://localhost:3000/api/products
 ```
 

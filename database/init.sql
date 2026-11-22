@@ -32,37 +32,4 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX IF NOT EXISTS idx_products_tenant ON products(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_tenant ON transactions(tenant_id);
 
--- Seeder: password untuk kedua akun adalah "password123"
-INSERT INTO tenants (store_name, email, password_hash, plan_type, max_products)
-VALUES
-    (
-        'Toko Kelontong Berkah',
-        'berkah@flexshop.id',
-        '$2b$10$83HQ6ihwkMHCXDvbtorYhOGYlgB4oBFYHXHfkEI2xyw5S.Au.V6xW',
-        'FREE',
-        10
-    ),
-    (
-        'Warung Kopi Senja',
-        'senja@flexshop.id',
-        '$2b$10$83HQ6ihwkMHCXDvbtorYhOGYlgB4oBFYHXHfkEI2xyw5S.Au.V6xW',
-        'PRO',
-        2147483647
-    )
-ON CONFLICT (email) DO NOTHING;
-
-INSERT INTO products (tenant_id, name, price, stock)
-SELECT t.id, seed.name, seed.price, seed.stock
-FROM tenants t
-JOIN (
-    VALUES
-        ('berkah@flexshop.id', 'Beras 5kg', 65000, 20),
-        ('berkah@flexshop.id', 'Minyak Goreng 1L', 18000, 30),
-        ('berkah@flexshop.id', 'Gula Pasir 1kg', 15000, 25),
-        ('senja@flexshop.id', 'Kopi Susu Gula Aren', 22000, 40),
-        ('senja@flexshop.id', 'Roti Bakar Coklat', 15000, 35)
-) AS seed(email, name, price, stock) ON seed.email = t.email
-WHERE NOT EXISTS (
-    SELECT 1 FROM products p
-    WHERE p.tenant_id = t.id AND p.name = seed.name
-);
+-- Database dibuat kosong. Toko pertama didaftarkan lewat halaman registrasi.

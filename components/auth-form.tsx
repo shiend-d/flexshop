@@ -98,7 +98,7 @@ export function AuthForm() {
                 label="Nama Toko"
                 value={storeName}
                 onChange={(event) => setStoreName(event.target.value)}
-                placeholder="Toko Kelontong Berkah"
+                placeholder="Contoh: Toko Sembako Jaya"
                 autoComplete="organization"
                 maxLength={100}
                 required
@@ -165,9 +165,6 @@ export function AuthForm() {
         <div className="mt-6 flex justify-center">
           <ThemeToggle />
         </div>
-        <p className="mt-4 text-center font-mono text-[11px] text-stone-400 transition-colors dark:text-stone-600">
-          Demo · berkah@flexshop.id / password123
-        </p>
       </div>
     </div>
   );
