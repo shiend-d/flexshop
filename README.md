@@ -37,11 +37,19 @@ Akses aplikasi di `http://localhost:3000`. Container yang berjalan:
 - `flexshop-app` — aplikasi Next.js (port 3000)
 - `flexshop-db` — PostgreSQL 15 (port internal 5432)
 
-Skema tabel dibuat otomatis dari `database/init.sql` saat volume database masih kosong. Database **tidak** berisi akun bawaan.
+Skema tabel dan data dummy dibuat otomatis dari `database/init.sql` saat volume database masih kosong.
 
-### Akun pertama
+### Akun dummy
 
-Buka halaman login lalu klik **"Belum punya toko? Daftar"** untuk membuat toko pertama (otomatis paket FREE, maks. 10 produk).
+| Toko | Email | Password | Paket | Produk |
+| --- | --- | --- | --- | --- |
+| Toko Dummy 1 | `toko1@gmail.com` | `admin123` | PRO | 15 |
+| Toko Dummy 2 | `toko2@gmail.com` | `admin123` | PRO | 18 |
+| Toko Dummy 3 | `toko3@gmail.com` | `admin123` | PRO | 21 |
+| Toko Dummy 4 | `toko4@gmail.com` | `admin123` | PRO | 25 |
+| Toko Dummy 5 | `toko5@gmail.com` | `admin123` | PRO | 30 |
+
+Semua akun memakai paket PRO agar bisa menampung 15–30 produk. Anda juga tetap bisa mendaftarkan toko baru lewat halaman registrasi.
 
 ## Dev lokal (`npm run dev`)
 
@@ -98,7 +106,7 @@ Semua query produk/transaksi memakai filter `tenant_id` dari sesi, bukan dari in
 
 ## Pengujian dengan Apache JMeter
 
-1. Daftarkan satu akun uji lewat `POST /api/auth/register`, lalu buat HTTP Request `POST /api/auth/login` dengan body JSON akun tersebut dan **HTTP Cookie Manager** agar cookie sesi tersimpan.
+1. Buat HTTP Request `POST /api/auth/login` dengan akun dummy (mis. `toko1@gmail.com` / `admin123`) dan **HTTP Cookie Manager** agar cookie sesi tersimpan.
 2. Tambahkan `GET /api/products` (butuh sesi) dan/atau `GET /api/health` (tanpa sesi).
 3. Skenario yang disarankan: 200, 400, 600, 800, 1000 virtual users; ramp-up 60 detik; loop 10.
 4. Pantau CPU/RAM container melalui Portainer/Grafana saat pengujian berlangsung.
@@ -106,15 +114,10 @@ Semua query produk/transaksi memakai filter `tenant_id` dari sesi, bukan dari in
 Contoh cepat via curl:
 
 ```bash
-# daftar sekali (ganti email/password sesuai kebutuhan)
-curl -s -X POST http://localhost:3000/api/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"store_name":"Toko Contoh","email":"toko@contoh.id","password":"rahasia123"}'
-
 curl -s http://localhost:3000/api/health
 curl -s -c cookie.txt -X POST http://localhost:3000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"toko@contoh.id","password":"rahasia123"}'
+  -d '{"email":"toko1@gmail.com","password":"admin123"}'
 curl -s -b cookie.txt http://localhost:3000/api/products
 ```
 
